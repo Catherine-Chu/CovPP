@@ -19,6 +19,7 @@ class UAV:
             self.pos[0] += rand_action[0]
             self.pos[1] += rand_action[1]
             moved = True
+
         elif strategy == 'Avoid_Random':
             self.get_local_view(env)
             try_times = 0
@@ -44,7 +45,6 @@ class UAV:
                             break
                     break
         return moved
-
 
     def get_local_view(self, env):
         self.local_view = {}

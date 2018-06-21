@@ -150,3 +150,8 @@ class Env:
                 self.initRandom()
         else:
             self.initTopology()
+
+    def EnvStep(self):
+        for i in range(len(self.Points)):
+            changeP=self.Points[i].changeProb
+
