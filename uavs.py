@@ -14,8 +14,8 @@ class UAV:
     def __init__(self, pos_x, pos_y, workcap=40, sense_r = 1, global_view = None):
         self.config = AdaptiveConfig()
         self.init_pos = [pos_x,pos_y]
-        self.pos = self.init_pos
-        self.old_pos = self.pos
+        self.pos = [pos_x, pos_y]
+        self.old_pos = [pos_x,pos_y]
         self.workcap = 40
         self.worktime = 0
         self.land_interval = 1
@@ -53,12 +53,24 @@ class UAV:
         self.path.clear()
         self.action_seq.clear()
 
-    def takeAction(self, env, center, strategy='Avoid_Random'):
+    def takeAction(self, env, center, strategy='Adaptive_Move'):
         moved = False
         action = None
         self.get_local_view(env)
         self.get_global_view(center)
-        self.old_pos = self.pos
+        self.old_pos = [self.pos[0], self.pos[1]]
+        # print("Before take action:")
+        # print(self.pos)
+        # print(self.old_pos)
+
+
+        # for key in self.local_view:
+        #     print(key)
+        #     if self.local_view[key]:
+        #         print("Reachable: %s.\n" % self.local_view[key].reachable)
+        #         print("Visited: %s.\n" % self.local_view[key].visited)
+        #     else:
+        #         print("None!")
 
         # Strategy
         from_p = self.pos[1]+self.pos[0]*env.scale[1]
@@ -120,7 +132,6 @@ class UAV:
                                     self.islanding = False
                                 break
                     try_times += 1
-                    print("Try_times: %d"% try_times)
                     if rand_action not in try_actions:
                         try_actions.append(rand_action)
 
@@ -154,7 +165,7 @@ class UAV:
         elif strategy == 'Adaptive_Move':
             if self.worktime <= self.workcap and not self.terminal:
                 if self.worktime <= self.config.ForbidTimeRatio * self.workcap:
-                    try_p=(self.pos[0],self.pos[1])
+                    old_try_p=(self.pos[0],self.pos[1])
                     if self.pos[0] > 0 and self.pos[0] < env.scale[0] - 1 and self.pos[1] > 0 and self.pos[1] < env.scale[
                         1] - 1:
                         allow_actions = [1,1,1,1]
@@ -176,9 +187,12 @@ class UAV:
                         allow_actions = [0,1,0,1]
 
                     tolerant_actions = allow_actions
+                    # print("origin_try_p:")
+                    # print(old_try_p)
                     for i in range(len(allow_actions)):
                         if allow_actions[i] == 1:
-                            try_p = (try_p[0]+self.actions[i][0],try_p[1]+self.actions[i][1])
+                            try_p = (old_try_p[0]+self.actions[i][0], old_try_p[1]+self.actions[i][1])
+                            # print("try_p: %s, %s." % (try_p[0], try_p[1]))
                             if isinstance(self.local_view[self.sense_p[i]],ChargingPoint):
                                 continue
                             else:
@@ -231,9 +245,9 @@ class UAV:
                                     self.step_in_charg = 0
                                     action = self.actions[5]
                                 else:
-                                    find,tar_station = self.findBestStation(start_p=from_p)
-                                    self.chargPath, self.charg_action_seq = self.replanPath(start_p=from_p,
-                                                                                            tar_station=tar_station)
+                                    temp_path, find, tar_station = self.findBestStation(start_p=from_p)
+                                    hasPath, self.chargPath, self.charg_action_seq = self.replanPath(start_p=from_p,
+                                                                                            tar_station=tar_station, path = temp_path)
                                     self.step_in_charg = 0
                                     action = self.charg_action_seq[self.step_in_charg]
                                     if find:
@@ -253,9 +267,9 @@ class UAV:
                                 try_p = (self.pos[0] + action[0], self.pos[1] + action[1])
                                 if not isinstance(self.local_view[(action[0],action[1])], ChargingPoint):
                                     if not self.local_view[(action[0],action[1])].reachable:
-                                        last_chargPath, last_charg_action_seq = self.replanPath(start_p=from_p,
+                                        hasPath,last_chargPath, last_charg_action_seq = self.replanPath(start_p=from_p,
                                                                                                 tar_station=self.chargPath[len(self.chargPath)-1])
-                                        if last_chargPath:
+                                        if hasPath:
                                             self.chargPath = self.chargPath[0:self.step_in_charg+1].extend(last_chargPath)
                                             self.charg_action_seq = self.charg_action_seq[0:self.step_in_charg].extend(last_charg_action_seq)
                                             action = self.charg_action_seq[self.step_in_charg]
@@ -282,11 +296,11 @@ class UAV:
                             try_p = (self.pos[0] + action[0], self.pos[1] + action[1])
                             if not isinstance(self.local_view[(action[0], action[1])], ChargingPoint):
                                 if not self.local_view[(action[0], action[1])].reachable:
-                                    last_chargPath, last_charg_action_seq = self.replanPath(start_p=from_p,
+                                    hasPath, last_chargPath, last_charg_action_seq = self.replanPath(start_p=from_p,
                                                                                             tar_station=self.chargPath[
                                                                                                 len(
                                                                                                     self.chargPath) - 1])
-                                    if last_chargPath:
+                                    if hasPath:
                                         self.chargPath = self.chargPath[0:self.step_in_charg + 1].extend(last_chargPath)
                                         self.charg_action_seq = self.charg_action_seq[0:self.step_in_charg].extend(
                                             last_charg_action_seq)
@@ -303,8 +317,8 @@ class UAV:
                             self.step_in_charg = 0
                             action = self.actions[5]
                         else:
-                            find,tar_station = self.findBestStation(start_p=from_p)
-                            self.chargPath,self.charg_action_seq = self.replanPath(start_p=from_p,tar_station=tar_station)
+                            temp_path, find,tar_station = self.findBestStation(start_p=from_p)
+                            hasPath, self.chargPath,self.charg_action_seq = self.replanPath(start_p=from_p,tar_station=tar_station, path=temp_path)
                             self.step_in_charg = 0
                             action = self.charg_action_seq[self.step_in_charg]
                             if find:
@@ -343,10 +357,10 @@ class UAV:
         #     past_path = self.path[0:self.step_in_path]
         #     past_action_seq = self.action_seq[0:self.step_in_path]
         #     if self.worktime > self.workcap*2/3:
-        #         find,tar_station = self.findBestStation()#IF EXIST,FOLLOW;ELSE NEW STATION
+        #         temp_path, find,tar_station = self.findBestStation()#IF EXIST,FOLLOW;ELSE NEW STATION
         #         start_p = self.path[self.step_in_path]
-        #         last_path,last_action_seq = self.replanPath(start_p, tar_station)
-        #         if last_path and last_action_seq:
+        #         hasPath,last_path,last_action_seq = self.replanPath(start_p, tar_station,path = temp_path)
+        #         if hasPath:
         #             self.path = past_path.extend(last_path)
         #             self.action_seq = past_action_seq.extend(last_action_seq)
         #         else:
@@ -380,14 +394,15 @@ class UAV:
         #                             self.islanding = False
         #             if not moved:
         #                 action = None
+        #                 temp_path = None
         #                 start_p = self.path[self.step_in_path]
         #                 if self.worktime > self.workcap * 2 / 3:
-        #                     find,tar_station = self.findBestStation(start_p)
+        #                     temp_path, find,tar_station = self.findBestStation(start_p)
         #                 else:
         #                     tar_station = None
         #                 center = self.put_local_view(env, center)
-        #                 last_path, last_action_seq = self.replanPath(start_p, tar_station)
-        #                 if last_path and last_action_seq:
+        #                 hasPath, last_path, last_action_seq = self.replanPath(start_p, tar_station, path=temp_path)
+        #                 if hasPath:
         #                     self.path = past_path.extend(last_path)
         #                     self.action_seq = past_action_seq.extend(last_action_seq)
         #                 else:
@@ -403,7 +418,9 @@ class UAV:
         else:
             self.terminal = True
 
-        print("WorkTime: %d" % self.worktime)
+        # print("After take action:")
+        # print(self.pos)
+        # print(self.old_pos)
         return moved, self.terminal, action, center
 
     def get_local_view(self, env):
@@ -411,7 +428,7 @@ class UAV:
         for i in range(len(self.sense_p)):
             sense_pos = (self.pos[0]+self.sense_p[i][0],self.pos[1]+self.sense_p[i][1])
             if sense_pos[0]>=0 and sense_pos[0]<env.scale[0] and sense_pos[1]>=0 and sense_pos[1]<env.scale[1]:
-                self.local_view[self.sense_p[i]]=env.Points[sense_pos[0]][sense_pos[1]]
+                self.local_view[self.sense_p[i]]= env.Points[sense_pos[0]][sense_pos[1]]
             else:
                 self.local_view[self.sense_p[i]]= None
 
@@ -421,6 +438,8 @@ class UAV:
     def put_local_view(self, env, center, action = None):
         if action:
             self.local_view[(action[0],action[1])] = env.Points[self.pos[0]][self.pos[1]]
+        # print("Before put:")
+        # print(self.old_pos)
         center.put_view(self.local_view, self.old_pos, self.sense_p)
         return center
 
@@ -459,13 +478,312 @@ class UAV:
     def findBestStation(self,start_p):
         #需要考虑到时间限制找到最优目标，如果没有时间内可达的目标则返回false,最近station标号
         find = False
+        stats = []
+        for i,row in enumerate(self.global_view.Points):
+            for j,p in enumerate(row):
+                if isinstance(p,ChargingPoint):
+                    stats.append((i*self.global_view.scale[1]+j,p))
+        '''
+        暂时加在这里,通过遍历图中的点更新所有边上的权值,
+        原本边的改变应该在点被更新的时候同时改变,对global_view而言就是调用put_local_view的时候,
+        后面更新后可以直接利用global_view的Edges信息进行计算
+        '''
+        for i in range(len(self.global_view.Edges)):
+            r = int(i/self.global_view.scale[1])
+            c = i-r*self.global_view.scale[1]
+            p = self.global_view.Points[r][c]
+            if not p.reachable:
+                if r>0 and r< self.global_view.scale[0]-1 and c>0 and c<self.global_view.scale[1]-1:
+                    self.global_view.Edges[i][i+1].traveltime = 100000
+                    self.global_view.Edges[i][i-1].traveltime = 100000
+                    self.global_view.Edges[i][i-self.global_view.scale[1]].traveltime = 100000
+                    self.global_view.Edges[i][i+self.global_view.scale[1]].traveltime = 100000
+                    self.global_view.Edges[i+1][i].traveltime = 100000
+                    self.global_view.Edges[i-1][i].traveltime = 100000
+                    self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
+                    self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                elif r==0:
+                    self.global_view.Edges[i][i+self.global_view.scale[1]].traveltime = 100000
+                    self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                    if c>0 or c<self.global_view.scale[1]-1:
+                        self.global_view.Edges[i][i + 1].traveltime = 100000
+                        self.global_view.Edges[i][i - 1].traveltime = 100000
+                        self.global_view.Edges[i+1][i].traveltime = 100000
+                        self.global_view.Edges[i-1][i].traveltime = 100000
+                    elif c==0:
+                        self.global_view.Edges[i][i + 1].traveltime = 100000
+                        self.global_view.Edges[i+1][i].traveltime = 100000
+                    elif c==self.global_view.scale[1]-1:
+                        self.global_view.Edges[i][i - 1].traveltime = 100000
+                        self.global_view.Edges[i - 1][i].traveltime = 100000
+                elif r==self.global_view.scale[0]-1:
+                    self.global_view.Edges[i][i - self.global_view.scale[1]].traveltime = 100000
+                    self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
+                    if c > 0 or c < self.global_view.scale[1] - 1:
+                        self.global_view.Edges[i][i + 1].traveltime = 100000
+                        self.global_view.Edges[i][i - 1].traveltime = 100000
+                        self.global_view.Edges[i + 1][i].traveltime = 100000
+                        self.global_view.Edges[i - 1][i].traveltime = 100000
+                    elif c == 0:
+                        self.global_view.Edges[i][i + 1].traveltime = 100000
+                        self.global_view.Edges[i + 1][i].traveltime = 100000
+                    elif c == self.global_view.scale[1].traveltime - 1:
+                        self.global_view.Edges[i][i - 1].traveltime = 100000
+                        self.global_view.Edges[i - 1][i].traveltime = 100000
+                elif c == 0:
+                    self.global_view.Edges[i][i+1].traveltime = 100000
+                    self.global_view.Edges[i+1][i].traveltime = 100000
+                    if r > 0 or r < self.global_view.scale[0] - 1:
+                        self.global_view.Edges[i][i + self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i][i - self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                        self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
+                    elif r == 0:
+                        self.global_view.Edges[i][i + self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                    elif r == self.global_view.scale[0] - 1:
+                        self.global_view.Edges[i][i - self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
+                elif c == self.global_view.scale[1]-1:
+                    self.global_view.Edges[i][i - 1].traveltime = 100000
+                    self.global_view.Edges[i - 1][i].traveltime = 100000
+                    if r > 0 or r < self.global_view.scale[0] - 1:
+                        self.global_view.Edges[i][i + self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i][i - self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                        self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
+                    elif r == 0:
+                        self.global_view.Edges[i][i + self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i + self.global_view.scale[1]][i].traveltime = 100000
+                    elif r == self.global_view.scale[0] - 1:
+                        self.global_view.Edges[i][i - self.global_view.scale[1]].traveltime = 100000
+                        self.global_view.Edges[i - self.global_view.scale[1]][i].traveltime = 100000
 
-        return find, 0
+        '''
+        ############################################################################
+        '''
+        # Floyd algorithm
+        A = []
+        path = []
+        n = len(self.global_view.Edges)
+        for i in range(n):
+            A.append([])
+            path.append([])
+            for j in range(n):
+                A[i].append(self.global_view.Edges[i][j].traveltime)
+                path[i].append(-1)
+        for k in range(n):
+            for i in range(n):
+                for j in range(n):
+                    if A[i][j] > (A[i][k] + A[k][j]):
+                        A[i][j] = A[i][k] + A[k][j]
+                        path[i][j] = k
+        min = 100000
+        tar = (-1,None)
+        for stat_p in stats:
+            if min > A[start_p][stat_p[0]]:
+                min = A[start_p][stat_p[0]]
+                tar = stat_p
 
-    def replanPath(self,start_p, tar_station = None):
+        total_travel_time = 0
+        t = tar[0]
+        while t != start_p and t != -1:
+            mid = path[start_p][t]
+            if mid != -1:
+                total_travel_time += self.global_view.Edges[mid][t].traveltime
+                t = mid
+            else:
+                total_travel_time += self.global_view.Edges[start_p][t].traveltime
+                break
+        if total_travel_time <= self.workcap - self.worktime:
+            find = True
+        else:
+            find = False
+        return path, find, tar[0]
+
+    def replanPath(self, start_p, tar_station = None, path = None):
         #需要考虑到时间限制，在时间限制内的可行路径才行
+        hasPath = False
+        if tar_station:
+            if not self.chargPath or not path:
+                if not path:
+                    A = []
+                    path = []
+                    n = len(self.global_view.Edges)
+                    for i in range(n):
+                        A.append([])
+                        path.append([])
+                        for j in range(n):
+                            A[i].append(self.global_view.Edges[i][j].traveltime)
+                            path[i].append(-1)
+                    for k in range(n):
+                        for i in range(n):
+                            for j in range(n):
+                                if A[i][j] > (A[i][k] + A[k][j]):
+                                    A[i][j] = A[i][k] + A[k][j]
+                                    path[i][j] = k
 
-        return None,None
+                temp_path = [tar_station]
+                t = path[start_p][tar_station]
+                while t != -1:
+                    temp_path.append(t)
+                    t = path[start_p][t]
+                temp_path.append(start_p)
+                temp_path.reverse()
+                temp_actions = []
+                for i in range(1,len(temp_path)):
+                    bias = temp_path[i]-temp_path[i-1]
+                    if bias == 1:
+                        temp_actions.append(self.actions[2])
+                    elif bias == -1:
+                        temp_actions.append(self.actions[3])
+                    elif bias == self.global_view.scale[1]:
+                        temp_actions.append(self.actions[0])
+                    elif bias == - self.global_view.scale[1]:
+                        temp_actions.append(self.actions[1])
+                    else:
+                        print("Illegal Action.")
+                total_travel_time = 0
+                for i in range(1,len(temp_path)):
+                    total_travel_time += self.global_view.Edges[temp_path[i-1]][temp_path[i]].traveltime
+                if total_travel_time <= self.workcap - self.worktime:
+                    hasPath = True
+                else:
+                    hasPath = False
+            else:
+                temp_path = [start_p]
+                temp_path.extend(self.chargPath[self.step_in_charg+1:len(self.chargPath)])
+                temp_actions = self.charg_action_seq[self.step_in_charg:len*self.charg_action_seq]
+                new_path = None
+                s = (int(temp_path[0]/self.global_view.scale[1]), int(temp_path[0]%self.global_view.scale[1]))
+                m = (int(temp_path[1]/self.global_view.scale[1]), int(temp_path[1]%self.global_view.scale[1]))
+                l = (int(temp_path[2]/self.global_view.scale[1]), int(temp_path[2]%self.global_view.scale[1]))
+                current_tar = 2
+                _tar = temp_path[current_tar]
+                search_area = [(max(0,min((s[0],m[0],l[0]))-1),min(self.global_view.scale[0]-1,max((s[0],m[0],l[0]))+1)),(max(0,min((s[1],m[1],l[1]))-1),min(self.global_view.scale[1]-1,max((s[1],m[1],l[1]))+1))]
+                while True:
+                    MAXN = 100000
+                    v = -1
+                    p_pos = []
+                    for i in range(search_area[0][0],search_area[0][1]+1):
+                        for j in range(search_area[1][0],search_area[1][1]+1):
+                            p_pos.append(i*self.global_view.scale[1]+self.global_view.scale[0])
+                    a = []
+                    dist = []
+                    for i,point in enumerate(p_pos):
+                        if point == start_p:
+                            v = i
+                        if point == temp_path[current_tar]:
+                            _tar = i
+                        a.append([])
+                        dist.append(MAXN)
+                        for j in range(len(p_pos)):
+                            a[i].append(self.global_view.Edges[point][p_pos[j]])
+                    pre=[]
+                    s=[]
+                    n = (search_area[0][1]-search_area[0][0]+1)*(search_area[1][1]-search_area[1][0]+1)
+                    m=0
+                    for i in range(n):
+                        pre.append(-1)
+                        s.append(False)
+                        if i != v:
+                            dist[i] = a[v][i]
+                        s[i] = False
+                    s[v] = True
+                    dist[v] = 0
+                    pre[v]=v
+                    for i in range(n):
+                        minset = MAXN
+                        u = v
+                        for j in range(n):
+                            if not s[j] and dist[j] < minset:
+                                u = j
+                                minset = dist[u]
+                        s[u] = True
+                        for j in range(n):
+                            if not s[j] and a[u][j] < MAXN:
+                                if dist[u] + a[u][j] < dist[j]:
+                                    dist[j] = dist[u] + a[u][j]
+                                    pre[j] = u
+
+                    if dist[_tar]< MAXN:
+                        new_path = [_tar]
+                        _pre = pre[_tar]
+                        while _pre != v:
+                            new_path.append(_pre)
+                            _pre = pre[_pre]
+                        new_path.append(v)
+                        new_path.reverse()
+
+                    if not new_path:
+                        if search_area[0][0]==0 and search_area[0][1] == self.global_view.scale[0]-1 and search_area[1][0]==0 and search_area[1][1]==self.global_view.scale[1]-1:
+                            hasPath = False
+                            current_tar = current_tar+1
+                            if current_tar >= len(temp_path):
+                                return False, None, None
+                        else:
+                            search_area = [(max(0, search_area[0][0] - 1),
+                                            min(self.global_view.scale[0] - 1, search_area[0][1] + 1)),
+                                           (max(0, search_area[1][0] - 1),
+                                           min(self.global_view.scale[1] - 1, search_area[1][1] + 1))]
+                        continue
+                    else:
+                        contain = False
+                        for i in range(1,len(new_path)-1):
+                            if p_pos[new_path[i]] in temp_path and temp_path.index(p_pos[new_path[i]])> current_tar:
+                                mid_index = temp_path.index(p_pos[new_path[i]])
+                                temp_path = temp_path[0:1].extend([p_pos[new_path[j]] for j in range(1,i) ]).extend(temp_path[temp_path.index(p_pos[new_path[i]]): len(temp_path)])
+                                add_actions = []
+                                for j in range(1,i+1):
+                                    bias = temp_path[j]-temp_path[j-1]
+                                    if bias == 1:
+                                        add_actions.append(self.actions[2])
+                                    elif bias == -1:
+                                        add_actions.append(self.actions[3])
+                                    elif bias == self.global_view.scale[1]:
+                                        add_actions.append(self.actions[0])
+                                    elif bias == - self.global_view.scale[1]:
+                                        add_actions.append(self.actions[1])
+                                    else:
+                                        print("Illegal Action.")
+                                temp_actions = add_actions.extend(temp_actions[mid_index:len(temp_actions)])
+                                contain = True
+                                break
+                            else:
+                                continue
+                        if not contain:
+                            temp_path = temp_path[0:1].extend([p_pos[new_path[j]] for j in range(1,len(new_path)-1)]).extend(temp_path[current_tar: len(temp_path)])
+                            add_actions = []
+                            for j in range(1, len(new_path)):
+                                bias = temp_path[j] - temp_path[j - 1]
+                                if bias == 1:
+                                    add_actions.append(self.actions[2])
+                                elif bias == -1:
+                                    add_actions.append(self.actions[3])
+                                elif bias == self.global_view.scale[1]:
+                                    add_actions.append(self.actions[0])
+                                elif bias == - self.global_view.scale[1]:
+                                    add_actions.append(self.actions[1])
+                                else:
+                                    print("Illegal Action.")
+                            temp_actions = add_actions.extend(temp_actions[current_tar:len(temp_actions)])
+
+                        break
+
+                total_travel_time = 0
+                for i in range(1, len(temp_path)):
+                    total_travel_time += self.global_view.Edges[temp_path[i - 1]][temp_path[i]].traveltime
+                if total_travel_time <= self.workcap - self.worktime:
+                    hasPath = True
+                else:
+                    hasPath = False
+        else:
+            start = start_p
+            # TSP问题？哈密尔顿通路/回路问题？
+            # hasPath, temp_path, temp_actions = Function(start_p)
+
+        return hasPath, temp_path[1:len(temp_path)], temp_actions
+
 
 if __name__ == '__main__':
     # done代表全局的是否结束
@@ -477,12 +795,12 @@ if __name__ == '__main__':
     uav_num = 2 # UAVs机群规模
     MAX_T = int(scale[0] * scale[1]/uav_num * 2) # 最大搜索步数
 
-    env = Env(scale=scale,obstacles_num=40,stations_num=5)
+    env = Env(scale=scale, obstacles_num=40, stations_num=5)
     view = copy.deepcopy(env)
 
     for x in range(view.scale[0]):
         for y in range(view.scale[1]):
-            if isinstance(ChargingPoint):
+            if isinstance(view.Points[x][y], ChargingPoint):
                 init_prob = view.Points[x][y].changeProb
                 view.Points[x][y].changeProb = 0.2
                 view.Points[x][y].update()

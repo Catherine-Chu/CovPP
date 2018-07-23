@@ -247,8 +247,7 @@ class Env(gym.Env):
                 self.state[i][0] += action[i][0]
                 self.state[i][1] += action[i][1]
                 P=self.Points[self.state[i][0]][self.state[i][1]]
-                print("x %d"%self.state[i][0])
-                print("y %d"%self.state[i][1])
+
                 if not P.reachable:
                     self.state[i][2] = 1
                     reward.append(-10)
@@ -307,6 +306,8 @@ class Env(gym.Env):
                         # 如果有余力而且有点可以去，但是选择了降落应该给予惩罚，
                         # 但只根据位置和是否完成了cov任务/坠毁的信息不足以知道uav是不是有余力，
                         # 或者说，这不是环境能够知道的事
+            else:
+                reward.append(None)
             done = done and self.state[i][2]
 
         if not done:
@@ -326,7 +327,6 @@ class Env(gym.Env):
         return self.state, reward, done, {}
 
     def render(self, mode='human', close=False):
-        print(self.state)
         if close:
             if self.viewer is not None:
                 self.viewer.close()
